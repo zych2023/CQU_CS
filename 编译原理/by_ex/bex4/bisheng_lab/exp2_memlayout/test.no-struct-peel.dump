@@ -1,0 +1,170 @@
+
+test.no-struct-peel.exe:     file format elf64-littleaarch64
+
+
+Disassembly of section .text:
+
+0000000000010700 <_start>:
+   10700:	d503201f 	nop
+   10704:	d280001d 	mov	x29, #0x0                   	// #0
+   10708:	d280001e 	mov	x30, #0x0                   	// #0
+   1070c:	aa0003e5 	mov	x5, x0
+   10710:	f94003e1 	ldr	x1, [sp]
+   10714:	910023e2 	add	x2, sp, #0x8
+   10718:	910003e6 	mov	x6, sp
+   1071c:	d503201f 	nop
+   10720:	100007a0 	adr	x0, 10814 <main>
+   10724:	d2800003 	mov	x3, #0x0                   	// #0
+   10728:	d2800004 	mov	x4, #0x0                   	// #0
+   1072c:	94000069 	bl	108d0 <__libc_start_main@plt>
+   10730:	94000064 	bl	108c0 <abort@plt>
+
+0000000000010734 <call_weak_fn>:
+   10734:	90000080 	adrp	x0, 20000 <calloc@plt+0xf700>
+   10738:	f9456400 	ldr	x0, [x0, #2760]
+   1073c:	b4000040 	cbz	x0, 10744 <call_weak_fn+0x10>
+   10740:	14000068 	b	108e0 <__gmon_start__@plt>
+   10744:	d65f03c0 	ret
+	...
+
+0000000000010750 <deregister_tm_clones>:
+   10750:	d503201f 	nop
+   10754:	10101d20 	adr	x0, 30af8 <__TMC_END__>
+   10758:	d503201f 	nop
+   1075c:	10101ce1 	adr	x1, 30af8 <__TMC_END__>
+   10760:	eb00003f 	cmp	x1, x0
+   10764:	540000c0 	b.eq	1077c <deregister_tm_clones+0x2c>  // b.none
+   10768:	90000081 	adrp	x1, 20000 <calloc@plt+0xf700>
+   1076c:	f9456821 	ldr	x1, [x1, #2768]
+   10770:	b4000061 	cbz	x1, 1077c <deregister_tm_clones+0x2c>
+   10774:	aa0103f0 	mov	x16, x1
+   10778:	d61f0200 	br	x16
+   1077c:	d65f03c0 	ret
+
+0000000000010780 <register_tm_clones>:
+   10780:	d503201f 	nop
+   10784:	10101ba0 	adr	x0, 30af8 <__TMC_END__>
+   10788:	d503201f 	nop
+   1078c:	10101b61 	adr	x1, 30af8 <__TMC_END__>
+   10790:	cb000021 	sub	x1, x1, x0
+   10794:	d37ffc22 	lsr	x2, x1, #63
+   10798:	8b810c41 	add	x1, x2, x1, asr #3
+   1079c:	9341fc21 	asr	x1, x1, #1
+   107a0:	b40000c1 	cbz	x1, 107b8 <register_tm_clones+0x38>
+   107a4:	90000082 	adrp	x2, 20000 <calloc@plt+0xf700>
+   107a8:	f9456c42 	ldr	x2, [x2, #2776]
+   107ac:	b4000062 	cbz	x2, 107b8 <register_tm_clones+0x38>
+   107b0:	aa0203f0 	mov	x16, x2
+   107b4:	d61f0200 	br	x16
+   107b8:	d65f03c0 	ret
+   107bc:	d503201f 	nop
+
+00000000000107c0 <__do_global_dtors_aux>:
+   107c0:	a9be7bfd 	stp	x29, x30, [sp, #-32]!
+   107c4:	910003fd 	mov	x29, sp
+   107c8:	f9000bf3 	str	x19, [sp, #16]
+   107cc:	90000113 	adrp	x19, 30000 <_DYNAMIC+0xf6e0>
+   107d0:	396ce260 	ldrb	w0, [x19, #2872]
+   107d4:	35000140 	cbnz	w0, 107fc <__do_global_dtors_aux+0x3c>
+   107d8:	90000080 	adrp	x0, 20000 <calloc@plt+0xf700>
+   107dc:	f9457000 	ldr	x0, [x0, #2784]
+   107e0:	b4000080 	cbz	x0, 107f0 <__do_global_dtors_aux+0x30>
+   107e4:	90000100 	adrp	x0, 30000 <_DYNAMIC+0xf6e0>
+   107e8:	f9457800 	ldr	x0, [x0, #2800]
+   107ec:	94000041 	bl	108f0 <__cxa_finalize@plt>
+   107f0:	97ffffd8 	bl	10750 <deregister_tm_clones>
+   107f4:	52800020 	mov	w0, #0x1                   	// #1
+   107f8:	392ce260 	strb	w0, [x19, #2872]
+   107fc:	f9400bf3 	ldr	x19, [sp, #16]
+   10800:	a8c27bfd 	ldp	x29, x30, [sp], #32
+   10804:	d65f03c0 	ret
+   10808:	d503201f 	nop
+   1080c:	d503201f 	nop
+
+0000000000010810 <frame_dummy>:
+   10810:	17ffffdc 	b	10780 <register_tm_clones>
+
+0000000000010814 <main>:
+   10814:	a9be7bfd 	stp	x29, x30, [sp, #-32]!
+   10818:	f9000bf3 	str	x19, [sp, #16]
+   1081c:	910003fd 	mov	x29, sp
+   10820:	5298d800 	mov	w0, #0xc6c0                	// #50880
+   10824:	52800401 	mov	w1, #0x20                  	// #32
+   10828:	72a005a0 	movk	w0, #0x2d, lsl #16
+   1082c:	5298d813 	mov	w19, #0xc6c0                	// #50880
+   10830:	72a005b3 	movk	w19, #0x2d, lsl #16
+   10834:	94000033 	bl	10900 <calloc@plt>
+   10838:	90000108 	adrp	x8, 30000 <_DYNAMIC+0xf6e0>
+   1083c:	f905b100 	str	x0, [x8, #2912]
+   10840:	b40000e0 	cbz	x0, 1085c <main+0x48>
+   10844:	91008008 	add	x8, x0, #0x20
+   10848:	52800029 	mov	w9, #0x1                   	// #1
+   1084c:	f1000a73 	subs	x19, x19, #0x2
+   10850:	b81e0109 	stur	w9, [x8, #-32]
+   10854:	b8040509 	str	w9, [x8], #64
+   10858:	54ffffa1 	b.ne	1084c <main+0x38>  // b.any
+   1085c:	2a1f03e0 	mov	w0, wzr
+   10860:	f9400bf3 	ldr	x19, [sp, #16]
+   10864:	a8c27bfd 	ldp	x29, x30, [sp], #32
+   10868:	d65f03c0 	ret
+
+Disassembly of section .init:
+
+000000000001086c <_init>:
+   1086c:	d503201f 	nop
+   10870:	a9bf7bfd 	stp	x29, x30, [sp, #-16]!
+   10874:	910003fd 	mov	x29, sp
+   10878:	97ffffaf 	bl	10734 <call_weak_fn>
+   1087c:	a8c17bfd 	ldp	x29, x30, [sp], #16
+   10880:	d65f03c0 	ret
+
+Disassembly of section .fini:
+
+0000000000010884 <_fini>:
+   10884:	d503201f 	nop
+   10888:	a9bf7bfd 	stp	x29, x30, [sp, #-16]!
+   1088c:	910003fd 	mov	x29, sp
+   10890:	a8c17bfd 	ldp	x29, x30, [sp], #16
+   10894:	d65f03c0 	ret
+
+Disassembly of section .plt:
+
+00000000000108a0 <abort@plt-0x20>:
+   108a0:	a9bf7bf0 	stp	x16, x30, [sp, #-16]!
+   108a4:	90000110 	adrp	x16, 30000 <_DYNAMIC+0xf6e0>
+   108a8:	f9458611 	ldr	x17, [x16, #2824]
+   108ac:	912c2210 	add	x16, x16, #0xb08
+   108b0:	d61f0220 	br	x17
+   108b4:	d503201f 	nop
+   108b8:	d503201f 	nop
+   108bc:	d503201f 	nop
+
+00000000000108c0 <abort@plt>:
+   108c0:	90000110 	adrp	x16, 30000 <_DYNAMIC+0xf6e0>
+   108c4:	f9458a11 	ldr	x17, [x16, #2832]
+   108c8:	912c4210 	add	x16, x16, #0xb10
+   108cc:	d61f0220 	br	x17
+
+00000000000108d0 <__libc_start_main@plt>:
+   108d0:	90000110 	adrp	x16, 30000 <_DYNAMIC+0xf6e0>
+   108d4:	f9458e11 	ldr	x17, [x16, #2840]
+   108d8:	912c6210 	add	x16, x16, #0xb18
+   108dc:	d61f0220 	br	x17
+
+00000000000108e0 <__gmon_start__@plt>:
+   108e0:	90000110 	adrp	x16, 30000 <_DYNAMIC+0xf6e0>
+   108e4:	f9459211 	ldr	x17, [x16, #2848]
+   108e8:	912c8210 	add	x16, x16, #0xb20
+   108ec:	d61f0220 	br	x17
+
+00000000000108f0 <__cxa_finalize@plt>:
+   108f0:	90000110 	adrp	x16, 30000 <_DYNAMIC+0xf6e0>
+   108f4:	f9459611 	ldr	x17, [x16, #2856]
+   108f8:	912ca210 	add	x16, x16, #0xb28
+   108fc:	d61f0220 	br	x17
+
+0000000000010900 <calloc@plt>:
+   10900:	90000110 	adrp	x16, 30000 <_DYNAMIC+0xf6e0>
+   10904:	f9459a11 	ldr	x17, [x16, #2864]
+   10908:	912cc210 	add	x16, x16, #0xb30
+   1090c:	d61f0220 	br	x17

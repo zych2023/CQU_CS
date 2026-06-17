@@ -1,0 +1,1418 @@
+=== Page 127 ===
+如果你是在使用 riscv64-unknown-elf-gcc  或 objdump ，可以观察 .size 、.type 、.section  这
+些指令广泛存在于编译结果中，用于标记函数和变量的属性。
+实验四
+ 
+实验四 毕昇编译器验证实验
+ 
+全部在 Docker 环境内完成（Windows/macOS + Docker Desktop，Windows 默认 WSL2）。  
+评价重点：功能正确 + 优化“可验证”（汇编/反汇编证据）+ 有对比数据（用 time/程序自带计时即
+可）。
+说明：在 x86 主机上以 linux/arm64  运行容器时通常会走 QEMU 仿真，绝对性能数据不具备可
+比性；本课程更强调“优化是否发生/如何验证”，性能只做“同机同法”的相对对比。
+0. 全流程总览
+ 
+实验 0（引导）：环境与基线（O0/O1/O2/O3 + 生成汇编验证优化发生）
+实验 1（自动并行化）：自动向量化（SIMD/NEON）+ OpenMP 并行 for
+实验 2（内存布局优化）：struct-peel（重点验证 calloc  调用与代码生成变化）
+实验 3（PGO）：插桩 → 运行采样 → 合并 profile → 反馈编译（对比汇编/布局）
+实验 4（Autotuner）：CoreMark 调优全流程（generate → iterate → finalize）
+实验 5（综合循环体优化）：Loop Fusion / Strength Reduction ，含汇编验证与Autotuner 对比
+1. Docker 环境准备
+ 
+1.1 必备软件
+ 
+Docker Desktop（Windows/macOS）
+访问 Docker官网，下载并安装 Docker Desktop。启动它，确保 Docker 服务正在运行。
+Windows 用户启用 WSL2（Docker Desktop 会提示）
+1.2 拉取并启动统一实验镜像
+ 
+说明：镜像为 linux/arm64 。
+1. 创建本地工作目录（示例）：
+Windows：E:\bisheng_compiler_project\workspace
+macOS：~/bisheng_compiler_project/workspace
+2. 拉取镜像：
+打开终端（Windows 用户请使用 PowerShell），执行以下命令，从 Docker Hub 直接拉取预配置
+好的实验环境镜像：
+3. 启动容器（把本地目录挂载进容器）：
+镜像拉取成功后，执行以下命令来启动并进入实验环境。
+请务必将命令中的 你本地workspace文件夹的绝对路径 替换为您电脑上 workspace  文件夹的真实路
+径。
+docker pull --platform linux/arm64 rongzhaokang/bisheng-lab:latest 
+
+
+=== Page 128 ===
+Windows 示例路径: E:\bisheng_compiler_project\workspace
+macOS 示例路径: /Users/你的用户名/Documents/bisheng_compiler_project/workspace
+示例：
+进入容器后，你应该看到类似：
+4. 立即验证工具：
+1.3 环境准备与实验常见问题
+ 
+本实验需要使用 Docker 容器运行毕昇编译器实验环境。若在镜像下载或容器运行过程中遇到问题，可参
+考以下配置方法。
+1.3.1 镜像拉取问题（未开启 VPN 时常见）
+ 
+如果 docker pull  速度很慢或失败，可以配置 Docker 镜像加速源。
+Windows / macOS（Docker Desktop）
+ 
+1. 打开 Docker Desktop
+2. 进入 Settings → Docker Engine
+3. 将配置替换或合并为：
+4. 点击 Apply & Restart 使配置生效。
+验证是否成功
+查看镜像源配置：
+docker run -it --rm --platform linux/arm64 \
+  -v "<你的workspace绝对路径>:/home/student/workspace" \
+  rongzhaokang/bisheng-lab:latest 
+[student@xxxx]$
+clang -v
+llvm-autotune -h
+python3 --version
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker-0.unsee.tech",
+    "https://docker.m.daocloud.io"
+  ],
+  "features": { "buildkit": true }
+}
+
+
+=== Page 129 ===
+测试拉取镜像：
+若能够正常拉取镜像，说明配置成功。
+Linux 系统 Docker 配置
+ 
+在 Linux 系统中，需要手动配置 daemon.json 。
+修改 Docker 配置文件
+创建或编辑文件：
+/etc/docker/daemon.json
+写入以下内容：
+重载并重启 Docker
+如果使用 rootless Docker，需要将配置文件放到：
+~/.config/docker/daemon.json
+然后执行：
+3. 启动实验环境容器
+安装多架构支持（binfmt）
+首先安装 binfmt 支持，以便运行 ARM 架构镜像：
+### Windows
+docker info | findstr /i "Registry Mirrors"
+### macOS / Linux
+docker info | grep -A 3 "Registry Mirrors"
+docker pull hello-world
+### 或
+docker pull busybox:latest
+{
+  "registry-mirrors": [
+    "https://docker.1ms.run",
+    "https://docker-0.unsee.tech",
+    "https://docker.m.daocloud.io"
+  ],
+  "live-restore": true,
+  "features": { "buildkit": true }
+}
+sudo systemctl daemon-reload
+sudo systemctl restart docker
+Rootless Docker（无 root 权限）
+systemctl --user daemon-reload
+systemctl --user restart docker
+
+
+=== Page 130 ===
+若出现类似输出说明安装成功：
+运行实验容器
+说明：
+--platform linux/arm64 ：指定运行 ARM64 架构环境
+-v ：挂载本地实验目录到容器中
+/home/student/workspace ：容器内实验目录
+1.3.2 容器启动问题（常见于二次启动容器）
+ 
+如果在启动容器时出现如下错误：
+通常是 WSL 与 Docker 的集成配置未正确开启 导致的，可按照以下步骤检查。
+解决方法
+ 
+1. 打开 Docker Desktop
+2. 进入 Settings → Resources → WSL Integration
+3. 确认以下选项已开启：
+✔ Enable integration with my default WSL distro
+4. 在 Enable integration with additional distros 中：
+勾选 Ubuntu
+5. 如果已经勾选但仍然报错：
+先取消勾选 Ubuntu
+点击 Apply & Restart
+再重新勾选 Ubuntu
+再次点击 Apply & Restart
+完成后重新启动容器即可。
+docker run --privileged --rm tonistiigi/binfmt --install all
+installing: arm64
+installing: arm
+installing: amd64
+docker run -it --rm \
+--platform linux/arm64 \
+-v "E:\bisheng_compiler_project\workspace:/home/student/workspace" \
+xiahoumuxuan/bisheng-lab:latest
+exec /bin/bash: exec format error
+
+
+=== Page 131 ===
+1.3.3 实验过程中缺少插件
+ 
+在实验过程中可能会遇到 OpenMP 或系统工具缺失 的问题，需要安装相关依赖。
+安装基础依赖
+ 
+在容器中执行：
+如果你的库安装在其他路径，请将 /usr/lib64  替换为对应路径。
+忘记su 密码无法安装插件
+ 
+1. 如果无法通过su 获取管理员权限，可以通过 Docker 直接进入 root 用户。
+2. 打开 PowerShell（管理员模式）
+执行：
+说明：
+ea66141ea422  是 容器 ID
+该 ID 可以从容器提示符 [student@xxxx]$ 中的 xxxx  获得
+进入 root 后即可安装依赖。
+常见需要安装的插件
+ 
+在 root 权限下执行：
+这些插件用于：
+time ：测试程序运行时间
+libomp / llvm-openmp ：支持 OpenMP 并行程序
+libomp-devel ：OpenMP 开发库
+2. 统一目录结构（容器内执行）
+ 
+进入挂载目录并创建结构：
+sudo dnf install libomp
+export LD_LIBRARY_PATH=/usr/lib64:$LD_LIBRARY_PATH
+docker exec -it --user root ea66141ea422 bash
+dnf install -y time
+dnf install -y libomp || true
+dnf install -y llvm-openmp || true
+dnf install -y libomp-devel || true
+cd ~/workspace
+mkdir -p 
+bisheng_lab/{exp0_baseline,exp1_parallel,exp2_memlayout,exp3_pgo,exp4_autotuner_c
+oremark,exp5_loopopt_project,report/asm_snippets}
+cd bisheng_lab
+
+
+=== Page 132 ===
+3. 通用规范：如何“对比 + 验证”
+ 
+3.1 三类证据必须保留（每个实验都要）
+ 
+1. 运行输出：stdout/stderr，含 checksum / 关键指标  
+2. 计时数据：使用 time -p  或程序自带计时（至少跑 3 次取中位数）  
+3. 代码生成证据（二选一，推荐汇编）：
+生成汇编：
+反汇编：
+注意：Docker/WSL2 下 perf  往往不可用或意义不大（容器没有内核权限/事件源），本课程不要
+求 perf。
+3.2 计时建议（尽量稳定）
+ 
+每个版本至少跑 3 次，记录中位数
+OpenMP 程序使用 omp_get_wtime() ，不要用 clock()
+如果主机较弱，优先降低样例规模
+4. 实验 0：环境与基线建立（引导）
+ 
+4.1 实验目的
+ 
+熟悉 clang  的基本使用方法，能够完成源程序编译、运行、生成汇编等基本操作。
+理解不同优化等级（-O0/-O1/-O2/-O3 ）的基本含义，建立“编译选项会影响生成代码形态”的直观
+认识。
+初步掌握通过对比汇编代码观察优化现象的方法，认识编译优化不是抽象概念，而是可以在中间结
+果和目标代码中被直接验证的过程。
+建立“优化结果必须可观察、可分析、可解释”的实验习惯，为后续常量传播、死代码删除、循环优
+化等实验打下基础。
+训练学生从源码、编译选项、可执行结果、汇编结果四个层面综合分析程序行为，形成基本的编译
+器验证意识。
+4.2 实验内容
+ 
+在指定实验目录下创建并编辑示例程序 toy_opt.c 。
+分别使用不同优化等级对程序进行编译，并运行生成的可执行文件，确认程序输出结果一致。
+使用 -S  选项生成对应的汇编代码，观察未优化版本与优化版本在指令数量、分支结构和常量处理
+方式上的差异。
+通过对比 -O0  与 -O2  生成的汇编，分析程序中是否发生了常量折叠、分支消除等基础优化现象。
+回答实验报告中的分析问题，说明“哪些语句在优化后被简化或删除”“这些变化为什么能够说明编译
+器进行了优化”。
+clang -O2 -S -o prog_O2.s prog.c
+objdump -d prog_O2 > prog_O2.dump
+
+
+=== Page 133 ===
+4.3 样例：toy_opt.c
+ 
+进入目录：
+创建 toy_opt.c ：
+编译运行 + 生成汇编：
+实验报告要求
+ 
+1. 运行结果：运行 -O0  与 -O2  两个版本程序，记录输出并说明是否一致。  
+2. 汇编对比：对比 toy_O0.s  与 toy_O2.s ，指出常量计算和分支结构是否被优化。  
+3. 现象说明：简要说明本程序中观察到的编译优化现象。
+5. 实验 1：自动并行化（SIMD/向量化 + OpenMP）
+ 
+5.1 实验目的
+ 
+理解自动向量化与线程级并行的基本区别，认识 SIMD 并行和多线程并行分别对应不同层次的性能
+优化手段。
+掌握使用编译选项与源代码 pragma 控制编译器优化行为的方法，能够主动构造“可对比”的实验条
+件。
+学会从程序运行时间和汇编代码两个维度验证优化效果，建立“性能提升必须有代码证据支撑”的实
+验意识。
+观察循环在开启优化后可能出现的向量寄存器使用、成组加载/存储、批量浮点运算等现象，理解自
+动向量化并不是抽象概念，而是会直接体现在目标代码中。
+cd ~/workspace/bisheng_lab/exp0_baseline
+#include <stdio.h>
+__attribute__((noinline)) int bar() {
+    int a = 10 * 10;
+    int b = 20;
+    if (a > 0) return a + 1;
+    else return a - 1;
+}
+int main() {
+    volatile int x = bar();
+    printf("%d\n", x);
+    return 0;
+}
+clang -O0 toy_opt.c -o toy_O0 && ./toy_O0
+clang -O2 toy_opt.c -o toy_O2 && ./toy_O2
+clang -O0 -S toy_opt.c -o toy_O0.s
+clang -O2 -S toy_opt.c -o toy_O2.s
+diff -u toy_O0.s toy_O2.s | sed -n '1,120p'
+
+
+=== Page 134 ===
+初步认识 OpenMP 的基本作用，理解在数据并行任务中，编译器自动优化与显式并行编程都可能
+带来性能收益，但其适用条件和实现方式不同。
+为后续分析循环优化、并行优化和体系结构相关性能问题打下基础，培养学生从“源码—编译选项—
+汇编—运行时间”四个层面综合分析程序性能的能力。
+5.2 实验内容
+ 
+在指定目录下创建 vec_add.c  与 vec_add_omp.c  两个示例程序，理解其循环结构和数据访问模
+式。
+对 vec_add.c  先保留禁止向量化的 pragma，编译并运行程序，记录其执行时间，并生成汇编代
+码作为未向量化基线。
+注释掉禁止向量化的 pragma，在相同优化等级下重新编译并运行程序，记录执行时间，生成汇编
+并与未向量化版本进行对比，分析是否出现向量化痕迹。
+编译并运行 OpenMP 版本 vec_add_omp.c ，记录执行时间，并与前两个版本进行比较，观察线程
+级并行带来的性能变化。
+对三种版本的运行结果进行整理，形成时间对比表，建议采用多次运行后取中位数的方式减小偶然
+误差。
+结合汇编代码分析自动向量化的证据，例如是否出现向量寄存器、批量数据加载/存储、单次处理多
+个数组元素的指令模式等。
+在实验报告中总结三种实现方式的差异，说明性能变化是否明显、可能原因是什么，以及“自动向量
+化”和“OpenMP 并行”分别属于哪一类优化手段。
+5.3 样例：vec_add.c / vec_add_omp.c（轻量参数，可根据自己实际情况调整参数）
+ 
+进入目录：
+创建 vec_add.c ：
+cd ~/workspace/bisheng_lab/exp1_parallel
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+void __attribute__ ((noinline))
+f(int N, float *a, float *b, float *out) {
+#pragma clang loop vectorize(disable)  // 注释掉=允许向量化
+    for (int i = 0; i < N; i++) out[i] = a[i] + b[i];
+}
+int main() {
+    int loop = 1000;      // 容器/仿真环境降低规模
+    int len  = 200000;
+    float *a = (float*)malloc(sizeof(float) * len);
+    float *b = (float*)malloc(sizeof(float) * len);
+    float *o = (float*)malloc(sizeof(float) * len);
+    for (int i = 0; i < len; i++) { 
+
+
+=== Page 135 ===
+创建 vec_add_omp.c ：
+步骤：
+1. 关闭向量化（保留 pragma）：
+    a[i] = (float)rand() /((float)RAND_MAX + 1.0f);
+    b[i] = (float)rand() / ((float)RAND_MAX + 1.0f); }
+    clock_t st = clock();
+    for (int i = 0; i < loop; i++) f(len, a, b, o);
+    clock_t ed = clock();
+    double t = (double)(ed - st) / CLOCKS_PER_SEC;
+    printf("time: %f s\n", t);
+    volatile float guard = o[0];
+    (void)guard;
+    free(a); free(b); free(o);
+    return 0;
+}
+#include <stdio.h>
+#include <stdlib.h>
+#include <omp.h>
+void __attribute__ ((noinline))
+f(int N, float *a, float *b, float *out) {
+#pragma omp parallel for num_threads(4)
+    for (int i = 0; i < N; i++) out[i] = a[i] + b[i];
+}
+int main() {
+    int loop = 1000;
+    int len  = 200000;
+    float *a = (float*)malloc(sizeof(float) * len);
+    float *b = (float*)malloc(sizeof(float) * len);
+    float *o = (float*)malloc(sizeof(float) * len);
+    for (int i = 0; i < len; i++) { a[i] = (float)rand() / ((float)RAND_MAX + 
+1.0f);b[i] = (float)rand() / ((float)RAND_MAX + 1.0f); }
+    double st = omp_get_wtime();
+    for (int i = 0; i < loop; i++) f(len, a, b, o);
+    double ed = omp_get_wtime();
+    printf("time: %f s\n", ed - st);
+    volatile float guard = o[0];
+    (void)guard;
+    free(a); free(b); free(o);
+    return 0;
+}
+
+
+=== Page 136 ===
+2. 开启向量化（注释 pragma 后再编译）：
+3. OpenMP：
+实验报告要求
+ 
+1. 时间记录：分别运行关闭向量化、开启向量化和 OpenMP 三个版本程序并记录执行时间。  
+2. 汇编证据：对比向量化前后的汇编代码并指出向量化相关指令或寄存器。  
+3. 结果分析：简要说明三个版本性能差异及可能原因。
+6. 实验 2：内存布局优化
+ 
+Docker 统一环境说明
+在部分 Docker/离线镜像的 BiSheng/LLVM 组合中，华为手册示例的 struct-peel  可能无法复现
+“多次 calloc  vs 1 次 calloc ”现象（即使尝试强制参数也不生效）。
+因此本实验采用两段式：
+A. struct-peel 探索验证（可选）：若你的环境能触发差异，就按手册现象分析；
+B. AoS→SoA 等价验证（必做）：保证在 Docker 环境下 100% 可验证“内存布局影响访存连续性
+与可向量化性”。
+6.1 实验目的
+ 
+理解结构体布局对编译优化和内存访问方式的影响。  
+通过反汇编观察编译器在结构体处理和内存分配上的代码生成差异。  
+验证 AoS（Array of Structs）与 SoA（Struct of Arrays）两种数据布局在访存模式上的区别。  
+学会通过汇编证据分析内存布局优化是否有利于向量化与连续访存。
+6.2 实验内容
+ 
+本实验包含两个部分，分别从编译器结构体优化行为和数据布局优化两个角度进行验证。
+A 部分（可选）：struct-peel 探索验证
+编写 struct_peel.c  程序并使用 -O3  编译生成可执行文件。  
+使用 objdump  对程序进行反汇编，观察内存分配相关调用。  
+统计 calloc/malloc  调用次数，对比不同编译结果是否存在差异。  
+clang -O2 vec_add.c -o vec_no_vec
+time -p ./vec_no_vec
+clang -O2 -S vec_add.c -o vec_no_vec.s
+clang -O2 vec_add.c -o vec_vec
+time -p ./vec_vec
+clang -O2 -S vec_add.c -o vec_vec.s
+diff -u vec_no_vec.s vec_vec.s | sed -n '1,160p'
+clang -O2 -fopenmp vec_add_omp.c -o vec_omp
+time -p ./vec_omp
+
+
+=== Page 137 ===
+根据统计结果判断 struct-peel 是否产生了代码生成差异。
+B 部分（必做）：AoS → SoA 等价验证
+编写 aos_soa.c  程序，分别实现 AoS 与 SoA 两种数据布局。  
+编译并运行程序，验证两种实现的计算结果是否一致。  
+生成汇编代码并定位 sum_a_aos  与 sum_a_soa  函数。  
+通过搜索指令特征，对比两种实现的访存模式与向量化痕迹
+进入目录：
+6.3 A 部分：struct-peel 探索验证（可选；只做编译+反汇编，避免 OOM）
+ 
+注意：下面代码里的 num  很大，如出现OOM问题，可适当减小num的数值，主要目的还是用于
+“生成二进制并观察反汇编差异”。
+创建 struct_peel.c ：
+编译两份（只编译，不运行）：
+反汇编并统计“真实分配调用次数”（只统计 bl  指令，避免把 adrp  等地址计算误当成调用）：
+cd ~/workspace/bisheng_lab/exp2_memlayout
+#include <stdlib.h>
+typedef struct {
+    int a;
+    double b;
+    char c;
+    float d;
+    short e;
+    int f;
+} str_t1;
+typedef struct { str_t1 tmp; str_t1 *st; } str_t2;
+str_t2 glob_struct;
+int num;
+int main () {
+    num = 300000000; 
+    str_t1 *p1 = (str_t1*)calloc(num, sizeof(str_t1));
+    glob_struct.st = p1;
+    if (glob_struct.st == NULL) return 0;
+    for (int i = 0; i < num; i++) glob_struct.st[i].a = 1;
+    return 0;
+}
+clang struct_peel.c -O3 -flto -fuse-ld=lld -o test.struct-peel.exe
+clang struct_peel.c -O3 -flto -fuse-ld=lld -o test.no-struct-peel.exe
+
+
+=== Page 138 ===
+判定与记录：
+若 test.struct-peel  的分配调用次数明显增多（例如 3/6 次），说明 struct-peel 生效：报告解
+释“结构体字段被剥离/拆分，可能按字段分配导致多次分配调用”。  
+若两者完全一致（Docker 环境常见），在报告中记录“本环境下 struct-peel 未产生可见 codegen 
+差异”，然后继续完成 6.4（必做）。
+6.4 B 部分：AoS→SoA 等价验证（必做）
+ 
+目标：验证“内存布局改变 → 访存更连续 → 更容易出现向量寄存器/更规整访存指令（汇编证
+据）”。
+评价：正确性一致 + 汇编证据（性能仅参考；Docker/仿真下波动正常）。
+创建 aos_soa.c ：
+objdump -d test.struct-peel.exe > test.struct-peel.dump
+objdump -d test.no-struct-peel.exe > test.no-struct-peel.dump
+grep -E "bl.*(calloc|malloc)" test.struct-peel.dump | wc -l
+grep -E "bl.*(calloc|malloc)" test.no-struct-peel.dump | wc -l
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <string.h>
+#include <time.h>
+#ifndef N
+#define N 12000000
+#endif
+#ifndef REPEAT
+#define REPEAT 10
+#endif
+typedef struct {
+    float a;
+    float pad[31];   // 32个float，共128B；访问 a 时步长很大
+} S;
+static inline double now_sec() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
+__attribute__((noinline))
+void transform_a_aos(const S* x, float* out) {
+    for (int r = 0; r < REPEAT; r++) {
+        for (int i = 0; i < N; i++) {
+            out[i] = x[i].a * 1.1f + 2.0f;   // AoS：跨步读取 a
+        }
+    }
+}
+
+
+=== Page 139 ===
+编译运行（正确性校验 + 可选计时）：
+__attribute__((noinline))
+void transform_a_soa(const float* a, float* out) {
+    for (int r = 0; r < REPEAT; r++) {
+        for (int i = 0; i < N; i++) {
+            out[i] = a[i] * 1.1f + 2.0f;     // SoA：连续读取
+        }
+    }
+}
+int main() {
+    S* xs = (S*)aligned_alloc(64, sizeof(S) * (size_t)N);
+    float* a = (float*)aligned_alloc(64, sizeof(float) * (size_t)N);
+    float* out_aos = (float*)aligned_alloc(64, sizeof(float) * (size_t)N);
+    float* out_soa = (float*)aligned_alloc(64, sizeof(float) * (size_t)N);
+    if (!xs || !a || !out_aos || !out_soa) {
+        printf("alloc failed\n");
+        return 1;
+    }
+    for (int i = 0; i < N; i++) {
+        xs[i].a = (float)i * 0.001f;
+        memset(xs[i].pad, 0, sizeof(xs[i].pad));
+        a[i] = xs[i].a;
+        out_aos[i] = 0.0f;
+        out_soa[i] = 0.0f;
+    }
+    double st1 = now_sec();
+    transform_a_aos(xs, out_aos);
+    double ed1 = now_sec();
+    double st2 = now_sec();
+    transform_a_soa(a, out_soa);
+    double ed2 = now_sec();
+    double checksum_aos = 0.0, checksum_soa = 0.0;
+    for (int i = 0; i < N; i++) {
+        checksum_aos += out_aos[i];
+        checksum_soa += out_soa[i];
+    }
+    printf("checksum_aos=%0.3f checksum_soa=%0.3f\n", checksum_aos, 
+checksum_soa);
+    printf("time_aos=%f time_soa=%f\n", ed1 - st1, ed2 - st2);
+    free(xs);
+    free(a);
+    free(out_aos);
+    free(out_soa);
+    return 0;
+}
+
+
+=== Page 140 ===
+生成汇编并抓取证据：
+实验报告要求
+ 
+1. 运行结果：说明 AoS 与 SoA 两种实现的输出是否一致。  
+2. 汇编证据：指出 AoS 与 SoA 在汇编中出现的访存或向量化差异。  
+3. 结果说明：简要说明内存布局改变对向量化与访存效率的影响。
+7. 实验 3：PGO 反馈优化
+ 
+7.1 实验目的
+ 
+理解 PGO（Profile Guided Optimization）反馈优化的基本思想。  
+学习通过程序运行数据指导编译器进行优化的方法。  
+观察 PGO 前后程序在执行时间和汇编代码上的变化。  
+理解输入数据分布对分支预测和编译优化的影响。
+7.2 实验内容
+ 
+本实验通过一个简单的排序程序验证 PGO 反馈优化的效果。
+编写 bubble_sort.c  程序并使用 -O2  编译生成基线程序，运行并记录执行时间。  
+使用 -fprofile-instr-generate  编译程序并运行，收集程序执行时产生的 profile 数据。  
+使用 llvm-profdata  工具合并 profile 数据生成 profdata  文件。  
+使用 -fprofile-instr-use  重新编译程序，使编译器利用收集到的 profile 数据进行优化。  
+运行 PGO 优化后的程序并记录执行时间，与基线程序进行对比。  
+通过 objdump  反汇编程序，对比 PGO 前后的代码布局或跳转结构变化。
+进入目录：
+clang -O3 aos_soa.c -o aos_soa
+time -p ./aos_soa
+### 期望：aos 与 soa 输出一致（或几乎一致）
+clang -O3 -S aos_soa.c -o aos_soa_O3.s
+### 定位函数标签
+grep -nE "sum_a_aos|sum_a_soa" aos_soa_O3.s | head -n 40
+### 证据 1：AoS 常见跨步/标量访存（例如 ldr s + fadd s）
+grep -nE "ldr\s+s|fadd\s+s" aos_soa_O3.s | head -n 80
+### 证据 2：SoA 更容易出现向量寄存器/宽载入痕迹（例如 ldr q / ldp q / fadd v）
+grep -nE "ldr\s+q|ldp\s+q|fadd\s+v" aos_soa_O3.s | head -n 80
+cd ~/workspace/bisheng_lab/exp3_pgo
+
+
+=== Page 141 ===
+创建 bubble_sort.c ：
+步骤：
+1. 基线：
+2. 插桩编译 + 收集：
+#include <stdio.h>
+#include <sys/time.h>
+#define ARRAY_LEN 80000
+int data[ARRAY_LEN];
+static struct timeval tm1;
+static inline void start() { gettimeofday(&tm1, NULL); }
+static inline void stop() {
+  struct timeval tm2; gettimeofday(&tm2, NULL);
+  unsigned long long t = 1000 * (tm2.tv_sec - tm1.tv_sec) + 
+  (tm2.tv_usec - tm1.tv_usec) / 1000;
+  printf("Average: %llu ms\n", t);
+}
+void swap_int(int *a,int *b){ int c=*a; *a=*b; *b=c; }
+void bubble_sort(int *a, int n){
+  for(int i=0;i<n-1;i++){
+    for(int j=i+1;j<n-1;j++)
+      if(a[i] < a[j]) swap_int(&a[i],&a[j]);
+  }
+}
+void get_data(){
+  for(int i=0;i<ARRAY_LEN;i++) data[i]=i; // 升序：分支概率偏置
+#ifdef __aarch64__
+  asm volatile("DMB SY");
+#endif
+}
+int main(){
+  get_data();
+  start();
+  bubble_sort(data, ARRAY_LEN);
+  stop();
+  return 0;
+}
+clang -O2 bubble_sort.c -o base.exe
+time -p ./base.exe
+clang -O2 -fprofile-instr-generate bubble_sort.c -o sample.exe
+LLVM_PROFILE_FILE="code-%p.profraw" ./sample.exe >/dev/null
+llvm-profdata merge -output=code.profdata code-*.profraw
+
+
+=== Page 142 ===
+3. 反馈编译：
+汇编/反汇编验证（至少一种）：
+实验报告要求
+ 
+1. 运行结果：记录基线程序与 PGO 优化程序的执行时间并进行简单对比。  
+2. 汇编证据：指出 PGO 前后在 bubble_sort  函数附近出现的代码结构变化。  
+3. 结果说明：简要说明输入数据分布为什么会影响 PGO 优化效果。
+8. 实验 4：Autotuner
+ 
+CoreMark 若完整 300000 iterations 可能较慢。容器环境建议先用 ITERATIONS=60000  跑通，再
+根据机器情况上调。
+8.1 实验目的
+ 
+理解 Autotuner（自动调优）通过搜索编译参数优化程序性能的基本思想。  
+学习使用 llvm-autotune  工具完成自动调优流程。  
+观察自动调优前后程序性能变化并进行对比分析。  
+了解自动调优在真实基准程序（CoreMark）中的应用效果。
+8.2 实验内容
+ 
+本实验通过 CoreMark 基准程序验证 Autotuner 自动调优流程。
+下载或准备 CoreMark 源码并进入实验目录。  
+编写 run.sh  脚本，通过 -fautotune-generate  初始化自动调优环境。  
+使用 llvm-autotune minimize  初始化调优配置。  
+通过多轮运行程序并记录执行时间，向 Autotuner 反馈性能数据。  
+完成自动调优并生成优化后的可执行程序。  
+对比 -O2  基线版本与 Autotuned 版本的运行结果。
+进入目录：
+准备 CoreMark（可先下载离线包；若网络可用则可自行 clone）：
+clang -O2 -fprofile-instr-use=code.profdata bubble_sort.c -o pgo.exe
+time -p ./pgo.exe
+objdump -d base.exe > base.dump
+objdump -d pgo.exe  > pgo.dump
+### 在报告里截取 bubble_sort 附近差异：跳转/布局变化
+cd ~/workspace/bisheng_lab/exp4_autotuner_coremark
+
+
+=== Page 143 ===
+创建 run.sh ：
+git clone https://gitee.com/chainsx/coremark.git
+cd coremark
+#!/bin/bash
+set -euo pipefail
+export AUTOTUNE_DATADIR=/tmp/autotuner_data
+rm -rf "$AUTOTUNE_DATADIR"
+mkdir -p "$AUTOTUNE_DATADIR"
+ITERS=${ITERS:-60000}
+TUNE_ITERS=${TUNE_ITERS:-10}
+CC=(
+  clang
+  -Iposix -I.
+  -g
+  -DFLAGS_STR=\"\"
+  -DITERATIONS="$ITERS"
+  core_list_join.c core_main.c core_matrix.c core_state.c core_util.c 
+posix/core_portme.c
+  -O2
+  -o coremark
+)
+echo "=== [1] generate ==="
+"${CC[@]}" -fautotune-generate
+echo "=== [2] init ==="
+llvm-autotune minimize
+echo "=== [3] iterate: ${TUNE_ITERS} rounds ==="
+for i in $(seq 1 "$TUNE_ITERS"); do
+  "${CC[@]}" -fautotune
+  time_cost=$(./coremark 0x0 0x0 0x66 "$ITERS" | grep "Total time" | awk '{print 
+$4}')
+  echo "Iteration $i -> time: $time_cost"
+  llvm-autotune feedback "$time_cost"
+done
+echo "=== [4] finalize ==="
+llvm-autotune finalize
+echo "=== [5] build autotuned & baseline ==="
+"${CC[@]}" -fautotune
+mv coremark coremark_autotuned
+"${CC[@]}"
+mv coremark coremark_O2
+echo "=== [6] run compare ==="
+echo "--- O2 baseline ---"
+
+
+=== Page 144 ===
+运行：
+实验报告要求
+ 
+1. 运行结果：记录 O2 基线版本与 Autotuned 版本的运行时间或 Iterations/Sec。  
+2. 调优证据：说明 AUTOTUNE_DATADIR/config.yaml  已生成并被使用。  
+3. 结果说明：简要分析 Autotuner 优化效果及可能原因。
+9. 实验 5：综合循环体优化验证（择一主线）
+ 
+9.1 实验目的
+ 
+理解循环优化中 Loop Fusion（循环合并） 与 Strength Reduction（强度削弱） 的基本思想。  
+学习通过不同优化等级观察编译器对循环结构的优化行为。  
+通过汇编代码验证循环合并或地址递推等优化是否发生。  
+结合 Autotuner 自动调优流程，观察优化参数对程序性能的影响。
+9.2 实验内容
+ 
+本实验包含两个优化案例，分别验证循环结构优化与算术强度削弱。
+A 部分：Loop Fusion（循环合并）
+编写 loop_fusion_test.c  程序，通过宏控制 unfused 与 fused 两种实现。  
+使用不同优化等级（-O0/-O1/-O2 ）编译并运行程序，记录执行时间。  
+生成 -O2  汇编代码，对比 unfused 与 fused 版本的循环结构变化。  
+使用 Autotuner 自动调优程序并与 O2 版本运行结果进行对比。
+B 部分：Strength Reduction（强度削弱）
+编写 strength_reduction_test.c  程序并使用 -O0/-O1/-O2  编译运行。  
+对比不同优化等级的执行时间并验证程序输出一致。  
+生成汇编代码并定位内层循环，观察乘法索引是否被地址递推替代。  
+使用 Autotuner 对 O2 版本进行自动调优并比较优化效果。
+进入目录：
+./coremark_O2 0x0 0x0 0x66 "$ITERS" | grep -E "Total 
+time|Iterations/Sec|CoreMark"
+echo "--- autotuned ---"
+./coremark_autotuned 0x0 0x0 0x66 "$ITERS" | grep -E "Total 
+time|Iterations/Sec|CoreMark"
+echo "config: $AUTOTUNE_DATADIR/config.yaml"
+chmod +x run.sh
+./run.sh
+
+
+=== Page 145 ===
+9.3 推荐主线 A：Loop Fusion（循环合并）
+ 
+创建 loop_fusion_test.c ：
+注意：仅依赖编译器自动进行 loop fusion 不稳定（可能不会触发）。为保证“可验证”，本实验采
+用“同一份代码通过宏切换 unfused/fused 两种实现”的方式。
+参数可调：N  默认 6,000,000；机器太慢可改小，比如 2,000,000：编译时加 -DN=2000000 ；
+REPEAT  默认 3；想更明显可改 5 或 10：编译时加 -DREPEAT=5 。
+cd ~/workspace/bisheng_lab/exp5_loopopt_project
+#define _GNU_SOURCE
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#ifndef N
+#define N 6000000
+#endif
+#ifndef REPEAT
+#define REPEAT 3
+#endif
+static inline double now_sec() {
+    struct timespec ts;
+    clock_gettime(CLOCK_MONOTONIC, &ts);
+    return (double)ts.tv_sec + (double)ts.tv_nsec * 1e-9;
+}
+int main() {
+    float *a = (float*)aligned_alloc(64, (size_t)N * sizeof(float));
+    float *b = (float*)aligned_alloc(64, (size_t)N * sizeof(float));
+    float *c = (float*)aligned_alloc(64, (size_t)N * sizeof(float));
+    float *d = (float*)aligned_alloc(64, (size_t)N * sizeof(float));
+    if (!a || !b || !c || !d) { fprintf(stderr, "alloc failed\n"); return 1; }
+    for (int i = 0; i < N; i++) { a[i] = (float)i; b[i] = (float)(N - i); }
+    double st = now_sec();
+#if defined(FUSED)
+    /* fused：单循环同时计算 c 和 d */
+    for (int r = 0; r < REPEAT; r++) {
+        for (int i = 0; i < N; i++) {
+            float ai = a[i];
+            c[i] = ai + b[i];
+            d[i] = ai * 0.5f;
+        }
+    }
+#else
+    /* unfused：两个相邻循环 */
+    for (int r = 0; r < REPEAT; r++) {
+        for (int i = 0; i < N; i++) c[i] = a[i] + b[i];
+        for (int i = 0; i < N; i++) d[i] = a[i] * 0.5f;
+
+
+=== Page 146 ===
+运行（每个版本跑多次，这里仅给出单次命令示例，记录 time 的中位数；同时记录 checksum）：
+生成汇编并对比（重点：unfused_O2 vs fused_O2）：
+提取“循环结构证据”（优先用注释；若没有注释则截 main 对比）：
+要求：
+1. O0/O1/O2 编译运行（多次取中位数）
+2. 生成 O0/O1/O2 汇编，重点对比 unfused_O2.s  与 fused_O2.s ，指出循环结构变化（是否合并/
+向量化）
+3. Autotuner：O2 + -fautotune-generate  + 10 次迭代，分析是否更快/更慢，参考指令：
+    }
+#endif
+    double ed = now_sec();
+    float checksum = 0.0f;
+    for (int i = 0; i < N; i++) checksum += c[i] + d[i];
+    fprintf(stderr, "Checksum: %f\n", checksum);
+#if defined(FUSED)
+    printf("mode=fused ");
+#else
+    printf("mode=unfused ");
+#endif
+    printf("N=%d REPEAT=%d time=%f\n", N, REPEAT, (ed - st));
+    free(a); free(b); free(c); free(d);
+    return 0;
+}
+echo "=== unfused_O0 ==="; ./unfused_O0
+echo "=== unfused_O1 ==="; ./unfused_O1
+echo "=== unfused_O2 ==="; ./unfused_O2
+echo "=== fused_O2   ==="; ./fused_O2
+clang -O2 -S loop_fusion_test.c -o unfused_O2.s
+clang -O2 -DFUSED=1 -S loop_fusion_test.c -o fused_O2.s
+### 若 clang 汇编带循环注释（可能出现 Inner Loop Header）
+echo "=== unfused loops ==="
+grep -n "Inner Loop Header" unfused_O2.s | head -n 20
+echo "=== fused loops ==="
+grep -n "Inner Loop Header" fused_O2.s | head -n 20
+### 若 grep 无输出，截取 main 段对比
+awk 'BEGIN{p=0} /^main:/{p=1} p{print} p && /^\s*\.size\s+main/{exit}' 
+unfused_O2.s | head -n 240 > unfused_main.snip.s
+awk 'BEGIN{p=0} /^main:/{p=1} p{print} p && /^\s*\.size\s+main/{exit}' fused_O2.s 
+  | head -n 240 > fused_main.snip.s
+diff -u unfused_main.snip.s fused_main.snip.s | sed -n '1,200p'
+
+
+=== Page 147 ===
+9.4 推荐主线 B：Strength Reduction（强度削弱）
+ 
+创建 strength_reduction_test.c ：
+export AUTOTUNE_DATADIR=/tmp/autotuner_fusion
+rm -rf "$AUTOTUNE_DATADIR" && mkdir -p "$AUTOTUNE_DATADIR"
+### generate
+clang -O2 -o fusion_tuned loop_fusion_test.c -fautotune-generate
+llvm-autotune minimize
+### iterate x10
+for i in $(seq 1 10); do
+  clang -O2 -o fusion_tuned loop_fusion_test.c -fautotune
+  t=$(./fusion_tuned | grep "time=" | awk -F'time=' '{print $2}')
+  echo "Iter $i time=$t"
+  llvm-autotune feedback "$t"
+done
+llvm-autotune finalize
+clang -O2 -o fusion_tuned loop_fusion_test.c -fautotune
+### compare
+echo "=== unfused_O2 ==="; for i in 1 2 3; do ./unfused_O2; done
+echo "=== fusion_tuned ==="; for i in 1 2 3; do ./fusion_tuned; done
+ls -lh /tmp/autotuner_fusion/config.yaml
+#include <stdio.h>
+#include <stdlib.h>
+#include <time.h>
+#define ARRAY_SIZE 8000000
+#define STRIDE 7
+#define OUTER_LOOPS 80
+int main() {
+    int *data = (int*)malloc(ARRAY_SIZE * sizeof(int));
+    if (!data) return 1;
+    for (int i = 0; i < ARRAY_SIZE; i++) data[i] = i;
+    long long total_sum = 0;
+    clock_t st = clock();
+    for (int k = 0; k < OUTER_LOOPS; k++) {
+        for (int i = 0; i < (ARRAY_SIZE / STRIDE); i++) {
+            total_sum += data[i * STRIDE];
+        }
+    }
+    clock_t ed = clock();
+    double t = (double)(ed - st) / CLOCKS_PER_SEC;
+    fprintf(stderr, "Checksum: %lld\n", total_sum & 0xFFFFFFFF);
+    printf("time: %f\n", t);
+
+
+=== Page 148 ===
+运行：
+生成汇编：
+定位内层循环并找“乘法索引是否消失”，验证乘法索引：
+验证地址递推：
+对比参照，禁用展开：
+要求：
+1. O0/O1/O2 对比 + 汇编对比：是否出现地址递推/指针累加替代乘法索引
+2. Checksum 三个版本应一致，时间只作为参考（Docker 下波动正常）建议每个版本跑 3 次取中位
+数
+3. Autotuner：O2 + autotune 10 次，分析收益来源，参考指令：
+    free(data);
+    return 0;
+}
+clang -O0 strength_reduction_test.c -o sr_O0
+clang -O1 strength_reduction_test.c -o sr_O1
+clang -O2 strength_reduction_test.c -o sr_O2
+time -p ./sr_O0
+time -p ./sr_O1
+time -p ./sr_O2
+clang -O0 -S strength_reduction_test.c -o sr_O0.s
+clang -O2 -S strength_reduction_test.c -o sr_O2.s
+### 先粗搜：O0 往往会出现 mul/lsl 等；O2 可能改成地址递推（add）
+grep -nE "\bmul\b|\bsmaddl\b|\bmla\b" sr_O0.s | head -n 40
+grep -nE "\bmul\b|\bsmaddl\b|\bmla\b" sr_O2.s | head -n 40
+### 也看看是否出现“指针递增”类指令（add/ldr 带 post-index）
+grep -nE "ldr.*\], #|add.*,#|subs" sr_O2.s | head -n 60
+echo "=== O2 stride evidence (#28 = 7*4 bytes) ==="
+grep -nE "#28|#0x1c" sr_O2.s | head -n 40
+echo "=== O2 pointer step evidence (#56 = 2*28, loop unrolling) ==="
+grep -nE "#56|#0x38" sr_O2.s | head -n 4060
+clang -O2 -fno-unroll-loops -S strength_reduction_test.c -o sr_O2_nounroll.s
+grep -nE "#28|#0x1c" sr_O2_nounroll.s | head -n 40
+grep -nE "\bmul\b|\bsmaddl\b|\bmla\b" sr_O2_nounroll.s | head -n 40
+export AUTOTUNE_DATADIR=/tmp/autotuner_sr
+rm -rf "$AUTOTUNE_DATADIR" && mkdir -p "$AUTOTUNE_DATADIR"
+
+
+=== Page 149 ===
+实验报告要求
+ 
+1. 运行结果：记录不同优化版本的运行时间并说明程序输出是否一致。  
+2. 汇编证据：指出循环合并或强度削弱在汇编代码中的体现。  
+3. 结果说明：简要说明循环优化或 Autotuner 对程序性能的影响。
+10. 思考题与报告提交
+ 
+10.1 实验思考题
+ 
+以下问题用于帮助理解实验中观察到的编译优化现象，请在实验报告中简要回答。
+实验0：编译优化基础
+ 
+1. 为什么在 -O2  编译下 10*10  可能不会在运行时计算？
+2. 为什么优化后程序输出仍然必须保持一致？
+3. 从汇编角度看，优化后代码通常有哪些变化？
+实验1：自动并行化
+ 
+1. 什么是 SIMD 向量化？它与普通循环执行有什么区别？
+2. 自动向量化与 OpenMP 并行化分别属于哪一类并行？
+3. 在汇编代码中，哪些特征可以说明程序已经发生向量化？
+实验2：内存布局优化
+ 
+1. 为什么 AoS（Array of Structs）访问可能不利于向量化？
+2. SoA（Struct of Arrays）为什么更容易形成连续访存？
+3. 在汇编中，连续访存通常会表现出哪些指令特征？
+### generate
+clang -O2 -o sr_tuned strength_reduction_test.c -fautotune-generate
+llvm-autotune minimize
+for i in $(seq 1 10); do
+  clang -O2 -o sr_tuned strength_reduction_test.c -fautotune
+  t=$(./sr_tuned | grep "^time:" | awk '{print $2}')
+  echo "Iter $i time=$t"
+  llvm-autotune feedback "$t"
+done
+llvm-autotune finalize
+clang -O2 -o sr_tuned strength_reduction_test.c -fautotune
+time -p ./sr_O2
+time -p ./sr_tuned
+ls -lh /tmp/autotuner_sr/config.yaml
+
+
+=== Page 150 ===
+实验3：PGO 反馈优化
+ 
+1. 为什么输入数据分布会影响 PGO 优化效果？
+2. PGO 为什么可以改善分支预测或代码布局？
+3. 如果训练数据与真实运行数据差异很大，PGO 可能产生什么问题？
+实验4：Autotuner 自动调优
+ 
+1. Autotuner 的基本思想是什么？
+2. 为什么自动调优有时只带来很小的性能提升？
+3. 为什么在不同机器上 Autotuner 的结果可能不同？
+实验5：循环优化
+ 
+1. 什么是 Loop Fusion？为什么循环合并可能减少内存访问开销？
+2. 什么是 Strength Reduction？为什么用地址递推可以替代乘法索引？
+3. 为什么这些循环优化通常在较高优化等级（如 -O2 ）才会出现？
+10.2 报告基本要求
+ 
+每个实验提交一份报告，至少包含：
+1. 环境信息（容器内）：
+2. 可复制命令清单（你实际运行的命令）
+3. 结果表格（至少：版本/编译参数/时间中位数/正确性校验）
+4. 汇编/反汇编证据（>=10 行关键片段，并解释“看到了什么”）
+5. 思考题回答
+附录：常见问题（Docker/WSL2 版）
+ 
+Q：perf 为什么不能用？
+A：容器通常没有访问宿主机 PMU 的权限，WSL2/虚拟化也会屏蔽硬件事件；本课程不要求 perf；
+如你选择的系统支持perf,可自行增加验证。
+Q：我的性能数据波动很大/优化看不出提升？
+A：仿真环境或系统负载会掩盖真实收益。用“汇编证据”证明优化发生；性能只做同机相对对比，取
+中位数。
+Q：OpenMP 编译失败？
+A：优先确认 clang -fopenmp  是否可用；若镜像已封装，一般可直接用。若仍失败，请查询论坛
+或者安装相关依赖包。
+Q：其他问题
+A：欢迎与老师助教沟通，共同解决问题。
+ 
+clang -v
+uname -a
+
+
+=== Page 151 ===
+实验五
+ 
+实验五（选做）
+ 
+实验目标
+ 
+进行IR和汇编层面的优化，深入理解计算机体系结构、掌握性能调优技巧、培养系统级思维和优化能力
+实验步骤
+ 
+从希冀上下载实验框架
+compiler [src_filename]
+-S -o [output_filename]
+O1 将输出你优化后的汇编结果至
+[output_filename]
+测评方法：
+ 
+使用命令 qemu-riscv32.sh ur_rv_executable
+来执行 risc-v 的可执行文件，可执行文件的执行时间
+会被打印到stderr ，通过此时间来观察优化效果
+实验五标准输出
+ 
+对链接有库函数的可执行文件，执行 qemu-riscv32.sh
+ur_rv_executable  后，最后一行会打印你
+的执行时间
+编译优化
+ 
+编译优化是编译器的一个重要部分，旨在改善生成的目标代码的质量和性能。通过应用各种优化技术，
+可以减少程序的执行时间、减少资源消耗，并提高代码的质量和可维护性。以下是一些常见的编译优化
+相关技术：
+1. 常量传播（Constant Propagation）：常量传播技术用于将变量或表达式中的常量值替换为其实际
+的值。通过在编译时进行常量传播，可以减少程序运行时的计算量，提高执行效率。
+2. 复写传播（Copy Propagation）：复写传播技术用于将变量的赋值操作替换为对应的值。这样可以
+减少对内存的读写操作，提高程序的执行速度。
+3. 死代码消除（Dead Code Elimination）：死代码消除技术用于删除程序中不会执行的代码。通过
+识别不会对程序结果产生影响的代码，可以减少不必要的计算和内存访问，提高程序的执行效率。
+4. 循环优化（Loop Optimization）：循环优化技术针对循环结构进行优化，以减少循环的执行时间
+和资源消耗。常见的循环优化技术包括循环展开（Loop Unrolling）、循环合并（Loop 
+Fusion）、循环划分（Loop Tiling）等。
+5. 数据流分析（Data Flow Analysis）：数据流分析技术用于分析程序中数据的传递和变化情况，以
+便进行后续的优化。通过数据流分析，可以识别出不必要的计算、无用的变量等，并进行相应的优
+化处理。
+6. 内联展开（Inline Expansion）：内联展开技术用于将函数调用处直接展开为函数体，以减少函数
+调用的开销。通过将函数体嵌入调用处，可以减少函数调用和返回的开销，提高程序的执行效率。
+7. 代码重排（Code Reordering）：代码重排技术通过改变指令的执行顺序，以提高指令级并行性和
+缓存利用率。通过优化指令的顺序，可以减少指令之间的依赖关系，提高指令的执行效率。
+编译器优化能力是现代编译器的核心，直接决定了生成机器码的质量好坏。
+TOTAL:  0H-0M-0S-0us
+
+
+=== Page 152 ===
+1.
+基于 SSA 的中间代码优化
+ 
+静态单变量赋值（Static Single Assignment，SSA）
+ 
+静态单变量赋值（Static Single Assignment，简称SSA）是一种在编译器优化和中间代码表示中常用的
+技术。它的主要目的是通过引入额外的变量和约束，使得程序的数据流更加明确和可控，从而方便进行
+优化。
+在 SSA 中，每个变量在程序中只被赋值一次，也就是说每个变量的赋值语句只会出现一次。为了实现这
+一点，编译器会进行一系列的转换操作，包括插入 φ 函数（Phi
+Function）和复制操作。
+SSA 的优点包括：
+1. 提供了明确的数据流信息，有助于进行各种编译优化。
+2. 简化了编译器的数据流分析，减少了复杂度。
+3. 支持更精确的内存别名分析，有助于提高代码生成的准确性和效率。
+φ 函数（Phi Function）
+ 
+φ 函数（Phi
+Function）是一种特殊的函数，用于选择不同路径上的变量版本。它通常用于控制流图中
+的分支节点，用于解决变量的定义在不同路径上存在的问题。
+具体而言，φ 函数具有以下特点：
+1. φ 函数有多个输入参数，每个参数对应一个可能的变量版本，这些版本来自于不同的路径。
+2. φ 函数的结果是一个输出变量，代表根据控制流的选择从输入参数中选择的正确版本。
+3. φ 函数只在控制流图中的分支节点处出现，用于合并不同路径上的变量版本。
+通过插入 φ 函数，SSA形式的中间表示确保了每个变量在使用点之前只有一个定义，解决了控制流
+分支带来的变量版本选择问题。φ 函数根据控制流的选择，选择正确的变量版本，使得在后续的数
+据流分析和优化中更容易进行。
+以下是一个示例代码片段，说明了如何使用 φ 函数来选择正确的变量版本：
+在上述代码中，根据控制流的选择，变量x 在不同的路径上有不同的版本。在第6行的φ函数中，x1 和
+x2 是来自不同路径的变量版本。根据条件判断的结果，φ 函数会选择正确的变量版本作为输出，将其赋
+值给变量y 。
+构造 SSA 形式的中间表示
+ 
+构造静态单变量赋值（SSA）的中间表示通常包括以下步骤：
+1. 确定基本块：首先，将程序的源代码分成基本块（Basic Blocks），每个基本块包含一系列的顺序
+执行语句，没有分支或跳转。
+2. 构建控制流图：根据基本块之间的跳转关系构建控制流图（Control
+Flow Graph，简称CFG）。
+CFG用于表示程序中的控制流信息，包括基本块之间的控制流转移和分支条件。
+3. 插入φ 函数：对于每个变量在控制流图中的分支节点（例如if语句），需要在该节点插入φ 函数
+（Phi
+Function）来选择正确的变量版本。φ函数的参数是来自不同路径的变量值，它会根据控
+制流的选择情况来选择合适的值。
+1:  if (condition) {
+2:      x = 1;
+3:  } else {
+4:      x = 2;
+5:  }
+6:  y = φ (x1,x2);  //  φ 函数根据控制流的选择，选择正确的变量版本
+//  后续的代码中使用 y 变量代替 x 变量
+...
+
+
+=== Page 153 ===
+4. 行变量重命名：从控制流图的入口开始，按照拓扑顺序遍历控制流图中的基本块。对于每个基本块
+中的变量，进行变量重命名操作。具体步骤如下：
+i.
+遍历基本块的每个前驱块，获取变量在不同路径上的版本
+ii.
+为变量创建新的版本，并更新变量的定义处，使其指向新版本的变量
+iii.
+更新基本块中使用该变量的地方，将其替换为对应版本的变量
+5. 更新使用处：在控制流图中，对于使用到变量的地方，需要根据控制流的选择情况选择正确的变量
+版本。这样可以保证每个变量在使用点只有一个定义。
+通过以上步骤，就可以构造出SSA的中间表示。这个中间表示包含了明确的数据流信息，每个变量
+都有唯一的版本，并且每个变量的赋值语句只出现一次。这样便于编译器在后续的优化阶段对程序
+进行分析和优化。
+2.
+后端优化
+ 
+寄存器是CPU中的稀有资源，如何高效的分配这一资源是一个至关重要的问题，如果不进行寄存器分配
+而把变量放在内存中，如我们在实验三中介绍的那样，你会发现你的编译器会生成大量的代码, 而且大部
+分都是load/store 。
+为了提高程序执行的效率并减少访存次数，你需要在你的编译器中实现寄存器分配。
+把寄存器当缓存用
+ 
+一种简单的策略是把像cache一样使用寄存器，寄存器的生命周期局限在基本块内：
+1. 首先,在栈帧上为所有变量都分配空间.
+2. 当需要用到某个变量的时候,把这个变量读出来,放在一个临时分配的寄存器里.
+3. 下次需要读写变量时,
+直接操作寄存器的值,
+省去内存访问的开销.
+4. 如果遇到某些情况,比如出现了函数调用,或者发生了控制流转移,就把寄存器里保存的所有变量写
+回栈帧,
+下次用的时候再重新读取.
+可以思考一下为什么生命周期在基本块内
+基于数据流分析的寄存器分配算法
+ 
+数据流分析指的是一组用来获取有关数据如何沿着程序执行路径流动的相关信息的技术。
+基于你构建 SSA 过程中产生的 CFG 图，可以继续进行数据流分析，以支持以下寄存器分配算法：
+1. 线性扫描寄存器分配是一个线性的寄存器分配算法. 它需要按顺序扫描变量的活跃区间,
+然后基于
+一些贪婪的策略,
+把变量放在寄存器上或者栈上。这种算法只需要进行一次扫描,
+就可以得到很
+不错的寄存器分配结果。
+2. 图着色寄存器分配：计算机中物理寄存器个数总是有限的，当需要一个寄存器但所有可用寄存器都
+在被使用时，就要将某个正在使用的寄存器溢出(spill)到内存中从而释放出一个寄存器。
+你应该查资料来详细了解以上算法并实现
+q&a
+ 
+store、load和getptr生成汇编
+ 
+在编译器中实现数组访问的内存寻址时，我采用了不同的策略来处理一维和多维数组：
+
+
+=== Page 154 ===
+一维数组的简单寻址
+ 
+对于一维数组（如int a[3] = {1,2,3} ），我在符号表中只记录：
+数组名称
+数组基地址相对于栈指针(sp)的偏移量
+访问格式：table = { (a, offset) }
+元素访问计算公式：地址 = sp + offset + index * 4
+多维数组的复合寻址
+ 
+对于多维数组（如int b[3][3] ），访问过程更复杂：
+1. 首先需要获取子数组的基址（如b[2] 的基址）
+2. 将这个基址存入中间变量（如变量x ）
+3. 然后通过这个中间变量访问最终元素（如b[2][2] ）
+寻址冲突问题
+ 
+这里出现了冲突：
+对于普通变量，使用：sp + offset + index * 4
+对于存储指针的变量，需要使用：sp + x.val + index * 4
+由于变量x 可能存储的是指针值或普通值，系统无法自动区分应该使用哪种寻址方式。
+这两者就出现了冲突，因为x.val不一定是一个指向地址的指针，有可能就是数组本身的值（例如
+b[2] ）。所以用了一个set来记录哪些值是存放指针的。
+根据存放的内容到底是不是一个指向地址的指针，选择对应的计算式：
+$offset + index * 4 + sp$ or $x.val+index*4+sp$
+代码实现：
+// 记录哪些变量存的是一个指针
+std::unordered_set<std::string> val_is_pointer;
+// 把des寄存器的内容放到内存中
+if (val_is_pointer.find(op1.name) != val_is_pointer.end()) {
+    // 把指针指向的地址取出来
+    auto op1_reg{getRs1(op1)};
+    load_operand_in_reg(op1, op1_reg, func_svm);
+    auto arr_addr_reg{rv::rvREG::T4};
+    fout << "\taddi\t" << toString(arr_addr_reg) << ", "
+        << toString(op1_reg) << ", " << std::stoi(op2.name) * 4
+        << "\n";
+    fout << "\tsw\t" << rv::toString(des_reg) << ", 0("
+        << toString(arr_addr_reg) << ")\n";
+} else {
+    fout << "\tsw\t" << rv::toString(des_reg) << ", "
+        << std::stoi(op2.name) * 4 + func_svm.find_operand(op1)
+        << "(sp)" << "\n";
+
+
+=== Page 155 ===
+ 
+短路运算
+ 
+短路运算是指在条件判断时，如果是‘||’操作，判断到一个为真就停止执行（跳过）后续的判断操作，如
+果是‘&&’判断到假就停止执行（跳过）后续的判断操作，这个短路运算是在第51号测试点short_circutt3
+等测试点中进行测试，51号测试点测试文件的片段如下：
+其中set_a会返回传入的值（也就是0），同时会设置a=0，所以在这个打印中只执行了第一个set_a，判
+断到第一个为0就停止了set_b，最后打印出来的结果是“0 3 ”（32是空格）。
+我当时就是在实验二生成IR测试这个测试点的时候意识到了这个问题，随后主要是改进了LOrExp 节点和
+LAndExp 节点的分析。
+实际上，并不能做到停止生成后续的判断代码（因为对于变量，访问不了变量的具体值，没法做运
+算），所以还是会生成所有的判断逻辑的指令，需要做的是，在执行完一个LAndExp之后，做一个有条
+件跳转goto即可（和if的逻辑一样），代码如下：
+这里标记了一个lazytag，是因为不知道后续生成的判断指令有多少，无法知道要跳转多少指令，所以在
+分析完这个节点的最后，去找到这个lazytag做更改即可。
+小技巧
+ 
+早发现早停止
+ 
+“早发现早停止”，避免“晚爆炸”
+🧠 问题：
+ 
+“程序报错了？原来是因为空指针。它什么时候变成空指针的？”
+程序在某个地方出错了（如空指针访问），但我们很晚才看到症状，如何在问题刚出现时就发现它？
+}
+a=2;b=3;
+if(set_a(0)&&set_b(1)){}
+putint(a);putch(32);
+putint(b);putch(32);
+// 如果land是1就直接不做下面的指令
+Instruction* goto_inst =
+    new ir::Instruction(Operand{landexp->v, landexp->t},
+                        Operand{},
+                        Operand{"lazytag", Type::IntLiteral},
+                        Operator::_goto);
+buffer.emplace_back(goto_inst);
+int tag_i = buffer.size() - 1;
+
+
+=== Page 156 ===
+原因
+说明
+1. 快速定位问题
+错误在第一时间暴露，而不是延迟触发
+2. 提高调试效率
+可以明确告诉你“哪一个假设不成立了”
+3. 文档化你的假设
+assert 表达了“我假设它不为空”的意图
+情况
+建议做法
+调试期验证逻辑
+✅ 用 assert()
+对外部资源（文件、用户输入）
+❌ 不用 assert，应该用 throw  或返回错误码
+生产代码
+✅ 用异常或检查，assert 可选性保留
+✅ 解法：在“潜在的出错点”放 assert() ！
+ 
+🔍 原因：
+ 
+assert()  会在程序第一次出现不合理状态时立即终止，而不是等到后面访问内存才炸。
+它能精确地告诉你，“这儿的状态不对”，而不是等到程序跑偏一段时间才提示你“已经晚了”。
+🎯 改进你的代码（使用 assert() ）
+ 
+💥 如果 g() 返回了空指针：
+ 
+没有 assert：程序在 it->value  时崩溃，call stack 可能复杂、难找源头。
+有了 assert：程序会在调用 g() 后立刻报错，告诉你 “g() 返回了空指针”。
+✅ 总结：使用 assert()  提前暴露错误的 3 个理由
+ 
+🧠 最佳实践建议
+ 
+void f(){
+    A* it = g();// 这里g()返回了空指针
+    ......
+    ......
+    it->value = "value";//<- ERROR 
+    //溯源难度很大，可能it在多个分支语句中被重新赋值
+    ......
+}
+void f(){
+    A* it = g();
+    assert(it != nullptr); // ✅ 提前发现问题，清晰地报出是 g() 出了问题
+    // 如果没有 assert，这行才崩 → 已经晚了
+    it->value = "value";
+}
+
+
+=== Page 157 ===
+智能指针
+含义
+std::unique_ptr<T>
+独占所有权，不能共享，不可复制
+std::shared_ptr<T>
+引用计数，多个 shared_ptr  可共享对象
+std::weak_ptr<T>
+不拥有对象，辅助解决循环引用问题
+智能指针预防内存泄露
+ 
+在 C++ 中，智能指针（std::unique_ptr , std::shared_ptr  等）是现代防止内存泄漏的关键手段，
+替代了手动的 new / delete  机制。
+🎯 什么是内存泄漏？
+ 
+内存泄漏（Memory Leak）是指程序申请了一块堆内存，却没有在不需要时释放它，导致这部分内存永
+远无法再被访问或回收。
+❌ 例子（经典写法会泄漏）：
+ 
+✅ 智能指针如何预防泄漏？
+ 
+智能指针是一种 RAII（资源获取即初始化）机制，它会在对象生命周期结束时自动释放资源。
+🧠 常用智能指针
+ 
+✅ 使用 unique_ptr  示例（防泄漏）：
+ 
+🚀 好处：
+ 
+没有 new / delete  的麻烦
+出现异常也不会泄漏
+RAII 保证资源生命周期正确
+void leak() {
+    A* ptr = new A();  // 分配了内存
+    // 忘记 delete ptr; 或者异常抛出后未能清理
+} // 内存泄漏，程序无法再访问这块内存
+#include <memory>
+void safe() {
+    std::unique_ptr<A> ptr = std::make_unique<A>();
+    // 自动释放，不会泄漏
+} // 离开作用域时，自动调用 delete
+
+
+=== Page 158 ===
+问题
+智能指针如何解决
+手动 delete 遗漏
+智能指针自动析构时释放内存
+异常中断流程
+智能指针仍然会触发析构
+循环引用
+shared_ptr  配合 weak_ptr  可避免
+代码更安全
+明确所有权模型，提升可维护性
+✅ shared_ptr  示例：
+ 
+⚠️ 注意事项：
+ 
+❌ 不当使用 shared_ptr 也可能泄漏（循环引用）：
+ 
+✅ 正确解法：用 weak_ptr  打破环
+ 
+✅ 总结
+ 
+✅ 我的设计：unordered_map<A*, std::unique_ptr<A>>
+ 
+✔️ 意图：
+ 
+通过 unique_ptr<A>  来自动管理内存，防止泄漏
+同时暴露出 A*  作为 key，使得访问或引用某个对象更方便
+#include <memory>
+void shared() {
+    std::shared_ptr<A> ptr1 = std::make_shared<A>();
+    std::shared_ptr<A> ptr2 = ptr1; // 引用计数 +1
+} // 最后一个 ptr 离开作用域时才 delete A
+struct A {
+    std::shared_ptr<A> next;
+};
+std::shared_ptr<A> a1 = std::make_shared<A>();
+std::shared_ptr<A> a2 = std::make_shared<A>();
+a1->next = a2;
+a2->next = a1; // 🔁 循环引用，永远不会释放！
+struct A {
+    std::weak_ptr<A> next;
+};
+std::unordered_map<A*, std::unique_ptr<A>> myMap;
+
+
+=== Page 159 ===
+🔍 为什么这很实用？
+ 
+unordered_map  内部会存储所有对象的所有权（通过 unique_ptr ），你不需要手动 delete
+又保留了 A*  用作 key（可当作“句柄”或“引用”），便于查找和访问
+A*  实际上是 unique_ptr<A>  所管理的裸指针，不会增加复杂度
+🧠 用法示例：
+ 
+ 
+结构化绑定让代码更可读
+ 
+结构化绑定（Structured Bindings）是 C++17 引入的一个语法糖，它可以让你像 Python 的多变量解
+构一样直接从结构体、数组、std::pair 、std::tuple  等类型中一次性“拆出”多个变量。
+🎯 为什么用结构化绑定？
+ 
+以前你要访问 std::pair  的成员，要写这样：
+用了结构化绑定之后，只需一行：
+是不是清爽很多？👇继续看用法！
+struct A {
+    int value;
+};
+std::unordered_map<A*, std::unique_ptr<A>> map;
+// 添加一个元素
+auto a = std::make_unique<A>();
+A* a_ptr = a.get();  // 保存裸指针
+map[a_ptr] = std::move(a);
+// 使用
+map[a_ptr]->value = 42;
+// 自动释放：map 被销毁时所有 A 都会被释放
+std::pair<int, std::string> p = {1, "hello"};
+int id = p.first;
+std::string name = p.second;
+auto [id, name] = p;
+
+

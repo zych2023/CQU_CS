@@ -1,0 +1,64 @@
+=== [1] generate ===
+=== [2] init ===
+[     4s] WARNING autotuner.resumable.interface: Environment variable CONFIG_DB_DIR is not set; a default directory is used for saving the config database: /tmp/autotuner_data
+[     7s]    INFO autotuner.resumable.interface: Initialized a new tuning run (ID: 1)
+[     9s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 1)
+=== [3] iterate ===
+Iteration 1 -> time: 13.975000
+[     5s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     5s]    INFO autotuner.resumable.interface: Received performance feedback 13.975000 for configuration (ID: 1)
+[     8s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 2)
+Iteration 2 -> time: 15.054000
+[     5s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     5s]    INFO autotuner.resumable.interface: Received performance feedback 15.054000 for configuration (ID: 2)
+[    14s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 4)
+Iteration 3 -> time: 15.097000
+[     7s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     7s]    INFO autotuner.resumable.interface: Received performance feedback 15.097000 for configuration (ID: 4)
+[    12s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 5)
+Iteration 4 -> time: 15.604000
+[     6s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     7s]    INFO autotuner.resumable.interface: Received performance feedback 15.604000 for configuration (ID: 5)
+[    10s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 6)
+Iteration 5 -> time: 16.833000
+[     6s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     6s]    INFO autotuner.resumable.interface: Received performance feedback 16.833000 for configuration (ID: 6)
+[     9s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 7)
+Iteration 6 -> time: 15.349000
+[    10s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[    10s]    INFO autotuner.resumable.interface: Received performance feedback 15.349000 for configuration (ID: 7)
+[    16s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 8)
+Iteration 7 -> time: 15.492000
+[     6s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     6s]    INFO autotuner.resumable.interface: Received performance feedback 15.492000 for configuration (ID: 8)
+[    10s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 9)
+Iteration 8 -> time: 14.140000
+[     7s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     7s]    INFO autotuner.resumable.interface: Received performance feedback 14.140000 for configuration (ID: 9)
+[    12s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 10)
+Iteration 9 -> time: 16.470000
+[     6s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     6s]    INFO autotuner.resumable.interface: Received performance feedback 16.470000 for configuration (ID: 10)
+[    11s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 11)
+Iteration 10 -> time: 15.349000
+[     6s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     6s]    INFO autotuner.resumable.interface: Received performance feedback 15.349000 for configuration (ID: 11)
+[     9s]    INFO autotuner.resumable.interface: Generated a new configuration (ID: 12)
+=== [4] finalize ===
+[     6s]    INFO autotuner.resumable.interface: Resumed a tuning run (ID: 1)
+[     6s]    INFO autotuner.resumable.interface: Best performance feedback is 13.975
+[     9s]    INFO autotuner.resumable.interface: Wrote optimal configuration to /tmp/autotuner_data/config.yaml; re-compile with -fautotune to apply it
+[     9s]    INFO autotuner.resumable.interface: Finalized a tuning run (ID: 1)
+=== [5] build autotuned and baseline ===
+=== [6] run compare ===
+--- O2 baseline ---
+CoreMark Size    : 666
+Total time (secs): 12.455000
+Iterations/Sec   : 4817.342433
+CoreMark 1.0 : 4817.342433 / BiSheng Enterprise 4.2.0.B009 Clang 17.0.6 (958fd14d28f0) -O2 / Heap
+--- autotuned ---
+CoreMark Size    : 666
+Total time (secs): 15.160000
+Iterations/Sec   : 3957.783641
+CoreMark 1.0 : 3957.783641 / BiSheng Enterprise 4.2.0.B009 Clang 17.0.6 (958fd14d28f0) -O2 / Heap
+config: /tmp/autotuner_data/config.yaml

@@ -1,0 +1,30 @@
+============================================================
+  PageRank 并行算法实验结果分析
+============================================================
+
+1. Serial Baseline:
+----------------------------------------
+  data/graph_1K.txt: 0.21 ms, 11 iterations
+  data/graph_5K.txt: 1.11 ms, 11 iterations
+  data/graph_10K.txt: 2.52 ms, 11 iterations
+  data/graph_50K.txt: 16.32 ms, 11 iterations
+  data/graph_100K.txt: 41.34 ms, 11 iterations
+
+2. OpenMP Best Speedup:
+----------------------------------------
+  data/graph_1K.txt: 1.83x (threads=4)
+  data/graph_5K.txt: 2.80x (threads=4)
+  data/graph_10K.txt: 3.27x (threads=4)
+  data/graph_50K.txt: 3.42x (threads=4)
+  data/graph_100K.txt: 3.36x (threads=4)
+
+3. MPI Best Speedup:
+----------------------------------------
+  data/graph_1K.txt: 1.00x (procs=1)
+  data/graph_5K.txt: 1.00x (procs=1)
+  data/graph_10K.txt: 1.00x (procs=1)
+  data/graph_50K.txt: 1.00x (procs=1)
+  data/graph_100K.txt: 1.48x (procs=2)
+
+============================================================
+Plots saved in: results/plots/
